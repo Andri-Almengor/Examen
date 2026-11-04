@@ -1,12 +1,10 @@
-
 package com.tienda.servlet;
 
 import com.tienda.dao.ProductoDAO;
 import com.tienda.model.Producto;
+import com.tienda.util.ProductoValidator;
 
 import java.io.IOException;
-import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.sql.SQLException;
 import java.util.List;
 
@@ -15,13 +13,16 @@ import jakarta.servlet.annotation.WebServlet;
 import jakarta.servlet.http.HttpServlet;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
-import jakarta.servlet.http.HttpSession;
 
+/**
+ * Controlador del CRUD de productos.
+ * GET: listar, abrir formulario de creación y abrir formulario de edición.
+ * POST: crear, actualizar y eliminar.
+ */
 @WebServlet("/productos")
 public class ProductoServlet extends HttpServlet {
 
-    private final ProductoDAO productoDAO =
-        new ProductoDAO();
+    private final ProductoDAO productoDAO = new ProductoDAO();
 
     @Override
     protected void doGet(
@@ -29,28 +30,21 @@ public class ProductoServlet extends HttpServlet {
             HttpServletResponse response)
             throws ServletException, IOException {
 
-        try {
+        request.setCharacterEncoding("UTF-8");
 
-            List<Producto> productos =
-                productoDAO.listar();
+        String accion = request.getParameter("accion");
 
-            request.setAttribute(
-                "productos", productos
-            );
-
-            request.getRequestDispatcher(
-                "/WEB-INF/vistas/listar.jsp"
-            ).forward(request, response);
-
-        } catch (SQLException e) {
-
-            log("Error consultando productos", e);
-
-            mostrarError(
-                request, response,
-                "No se pudo cargar el listado."
-            );
+        if ("nuevo".equals(accion)) {
+            mostrarFormularioNuevo(request, response);
+            return;
         }
+
+        if ("editar".equals(accion)) {
+            mostrarFormularioEditar(request, response);
+            return;
+        }
+
+        listar(request, response);
     }
 
     @Override
@@ -61,52 +55,97 @@ public class ProductoServlet extends HttpServlet {
 
         request.setCharacterEncoding("UTF-8");
 
-        HttpSession sesion =
-            request.getSession(false);
-
-        if (sesion == null
-                || sesion.getAttribute("usuario") == null) {
-
-            response.sendRedirect(
-                request.getContextPath()
-                + "/index.jsp"
-            );
-            return;
-        }
-
-        // Comprobacion de seguridad para formularios
-        String tokenEsperado = (String)
-            sesion.getAttribute("csrfToken");
-
-        String tokenRecibido =
-            request.getParameter("csrfToken");
-
-        if (tokenEsperado == null
-                || !tokenEsperado.equals(tokenRecibido)) {
-
-            response.sendError(
-                HttpServletResponse.SC_FORBIDDEN,
-                "Formulario no valido."
-            );
-            return;
-        }
-
-        String accion =
-            request.getParameter("accion");
+        String accion = request.getParameter("accion");
 
         if ("registrar".equals(accion)) {
-
             registrar(request, response);
+            return;
+        }
 
-        } else if ("eliminar".equals(accion)) {
+        if ("actualizar".equals(accion)) {
+            actualizar(request, response);
+            return;
+        }
 
+        if ("eliminar".equals(accion)) {
             eliminar(request, response);
+            return;
+        }
 
-        } else {
+        response.sendError(
+            HttpServletResponse.SC_BAD_REQUEST,
+            "Acción no válida."
+        );
+    }
 
-            response.sendError(
-                HttpServletResponse.SC_BAD_REQUEST,
-                "Accion no valida."
+    private void listar(
+            HttpServletRequest request,
+            HttpServletResponse response)
+            throws ServletException, IOException {
+
+        try {
+            List<Producto> productos = productoDAO.listar();
+            request.setAttribute("productos", productos);
+
+            request.getRequestDispatcher(
+                "/WEB-INF/vistas/listar.jsp"
+            ).forward(request, response);
+
+        } catch (SQLException e) {
+            log("Error consultando productos", e);
+            mostrarError(
+                request,
+                response,
+                "No se pudo cargar el listado de productos."
+            );
+        }
+    }
+
+    private void mostrarFormularioNuevo(
+            HttpServletRequest request,
+            HttpServletResponse response)
+            throws ServletException, IOException {
+
+        request.setAttribute("modo", "crear");
+
+        request.getRequestDispatcher(
+            "/WEB-INF/vistas/formulario.jsp"
+        ).forward(request, response);
+    }
+
+    private void mostrarFormularioEditar(
+            HttpServletRequest request,
+            HttpServletResponse response)
+            throws ServletException, IOException {
+
+        Integer id = obtenerId(request);
+
+        if (id == null) {
+            redirigir(response, request, "error");
+            return;
+        }
+
+        try {
+            Producto producto = productoDAO.buscarPorId(id);
+
+            if (producto == null) {
+                redirigir(response, request, "noexiste");
+                return;
+            }
+
+            request.setAttribute("modo", "editar");
+            request.setAttribute("producto", producto);
+
+            request.getRequestDispatcher(
+                "/WEB-INF/vistas/formulario.jsp"
+            ).forward(request, response);
+
+        } catch (SQLException e) {
+            log("Error buscando producto para editar", e);
+            mostrarError(
+                request,
+                response,
+                "No se pudo cargar el producto solicitado."
             );
         }
     }
@@ -114,80 +153,77 @@ public class ProductoServlet extends HttpServlet {
     private void registrar(
             HttpServletRequest request,
             HttpServletResponse response)
-            throws IOException {
+            throws ServletException, IOException {
 
-        String nombre =
-            request.getParameter("nombre");
+        try {
+            Producto producto = validarProducto(request);
 
-        String precioTexto =
-            request.getParameter("precio");
+            if (productoDAO.insertar(producto)) {
+                redirigir(response, request, "creado");
+            } else {
+                mostrarError(
+                    request,
+                    response,
+                    "No se pudo registrar el producto."
+                );
+            }
 
-        String stockTexto =
-            request.getParameter("stock");
+        } catch (IllegalArgumentException e) {
+            reenviarFormulario(
+                request,
+                response,
+                "crear",
+                null,
+                e.getMessage()
+            );
 
-        if (nombre == null
-                || precioTexto == null
-                || stockTexto == null) {
-
-            errorRegistro(request, response, "datos");
-            return;
+        } catch (SQLException e) {
+            log("Error registrando producto", e);
+            mostrarError(
+                request,
+                response,
+                "Ocurrió un error al guardar el producto."
+            );
         }
+    }
 
-        nombre = nombre.trim();
+    private void actualizar(
+            HttpServletRequest request,
+            HttpServletResponse response)
+            throws ServletException, IOException {
 
-        if (nombre.isEmpty() || nombre.length() > 120) {
-            errorRegistro(request, response, "datos");
+        Integer id = obtenerId(request);
+
+        if (id == null) {
+            redirigir(response, request, "error");
             return;
         }
 
         try {
+            Producto producto = validarProducto(request);
 
-            BigDecimal precio =
-                new BigDecimal(precioTexto.trim())
-                    .setScale(
-                        2, RoundingMode.UNNECESSARY
-                    );
-
-            int stock =
-                Integer.parseInt(stockTexto.trim());
-
-            if (precio.compareTo(BigDecimal.ZERO) < 0
-                    || precio.compareTo(
-                        new BigDecimal("99999999.99")
-                    ) > 0
-                    || stock < 0) {
-
-                errorRegistro(request, response, "datos");
-                return;
-            }
-
-            Producto producto =
-                new Producto(nombre, precio, stock);
-
-            boolean registrado =
-                productoDAO.insertar(producto);
-
-            if (registrado) {
-
-                response.sendRedirect(
-                    request.getContextPath()
-                    + "/productos?mensaje=creado"
-                );
-
+            if (productoDAO.actualizar(id, producto)) {
+                redirigir(response, request, "actualizado");
             } else {
-
-                errorRegistro(request, response, "bd");
+                redirigir(response, request, "noexiste");
             }
 
-        } catch (NumberFormatException |
-                 ArithmeticException e) {
-
-            errorRegistro(request, response, "datos");
+        } catch (IllegalArgumentException e) {
+            reenviarFormulario(
+                request,
+                response,
+                "editar",
+                id,
+                e.getMessage()
+            );
 
         } catch (SQLException e) {
-
-            log("Error registrando producto", e);
-            errorRegistro(request, response, "bd");
+            log("Error actualizando producto", e);
+            mostrarError(
+                request,
+                response,
+                "Ocurrió un error al actualizar el producto."
+            );
         }
     }
 
@@ -196,61 +232,105 @@ public class ProductoServlet extends HttpServlet {
             HttpServletResponse response)
             throws IOException {
 
+        Integer id = obtenerId(request);
+
+        if (id == null) {
+            redirigir(response, request, "error");
+            return;
+        }
+
         try {
+            boolean eliminado = productoDAO.eliminar(id);
 
-            int id = Integer.parseInt(
-                request.getParameter("id")
-            );
-
-            if (id <= 0) {
-                throw new NumberFormatException();
-            }
-
-            boolean eliminado =
-                productoDAO.eliminar(id);
-
-            if (eliminado) {
-
-                response.sendRedirect(
-                    request.getContextPath()
-                    + "/productos?mensaje=eliminado"
-                );
-
-            } else {
-
-                response.sendRedirect(
-                    request.getContextPath()
-                    + "/productos?mensaje=noexiste"
-                );
-            }
-
-        } catch (NumberFormatException e) {
-
-            response.sendRedirect(
-                request.getContextPath()
-                + "/productos?mensaje=error"
+            redirigir(
+                response,
+                request,
+                eliminado ? "eliminado" : "noexiste"
             );
 
         } catch (SQLException e) {
-
             log("Error eliminando producto", e);
-
-            response.sendRedirect(
-                request.getContextPath()
-                + "/productos?mensaje=error"
-            );
+            redirigir(response, request, "error");
         }
     }
 
-    private void errorRegistro(
+    private Producto validarProducto(HttpServletRequest request) {
+
+        return ProductoValidator.validar(
+            request.getParameter("nombre"),
+            request.getParameter("descripcion"),
+            request.getParameter("precio"),
+            request.getParameter("stock"),
+            request.getParameter("imagenUrl")
+        );
+    }
+
+    private Integer obtenerId(HttpServletRequest request) {
+
+        try {
+            int id = Integer.parseInt(request.getParameter("id"));
+            return id > 0 ? id : null;
+
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private void reenviarFormulario(
             HttpServletRequest request,
             HttpServletResponse response,
-            String tipo)
+            String modo,
+            Integer id,
+            String error)
+            throws ServletException, IOException {
+
+        request.setAttribute("modo", modo);
+        request.setAttribute("error", error);
+
+        if (id != null) {
+            request.setAttribute("idFormulario", id);
+        }
+
+        request.setAttribute(
+            "nombreFormulario",
+            valor(request.getParameter("nombre"))
+        );
+        request.setAttribute(
+            "descripcionFormulario",
+            valor(request.getParameter("descripcion"))
+        );
+        request.setAttribute(
+            "precioFormulario",
+            valor(request.getParameter("precio"))
+        );
+        request.setAttribute(
+            "stockFormulario",
+            valor(request.getParameter("stock"))
+        );
+        request.setAttribute(
+            "imagenFormulario",
+            valor(request.getParameter("imagenUrl"))
+        );
+
+        request.getRequestDispatcher(
+            "/WEB-INF/vistas/formulario.jsp"
+        ).forward(request, response);
+    }
+
+    private String valor(String valor) {
+        return valor == null ? "" : valor;
+    }
+
+    private void redirigir(
+            HttpServletResponse response,
+            HttpServletRequest request,
+            String mensaje)
             throws IOException {
 
         response.sendRedirect(
             request.getContextPath()
-            + "/registro.jsp?error=" + tipo
+            + "/productos?mensaje="
+            + mensaje
         );
     }
 
@@ -261,7 +341,6 @@ public class ProductoServlet extends HttpServlet {
             throws ServletException, IOException {
 
         request.setAttribute("mensaje", mensaje);
-
         response.setStatus(
             HttpServletResponse.SC_INTERNAL_SERVER_ERROR
         );

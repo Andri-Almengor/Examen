@@ -1,4 +1,3 @@
-
 package com.tienda.dao;
 
 import com.tienda.model.Producto;
@@ -11,85 +10,119 @@ import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.List;
 
+/**
+ * ADO/DAO responsable de todas las sentencias DML de productos.
+ */
 public class ProductoDAO {
 
-    // Registrar un producto
-    public boolean insertar(Producto producto)
-            throws SQLException {
+    public boolean insertar(Producto producto) throws SQLException {
 
-        String sql = "INSERT INTO productos "
-                   + "(nombre, precio, stock) "
-                   + "VALUES (?, ?, ?)";
+        String sql =
+            "INSERT INTO productos "
+            + "(nombre, descripcion, precio, stock, imagen_url) "
+            + "VALUES (?, ?, ?, ?, ?)";
 
         try (
-            Connection conexion =
-                Conexion.obtenerConexion();
-
-            PreparedStatement ps =
-                conexion.prepareStatement(sql)
+            Connection conexion = Conexion.obtenerConexion();
+            PreparedStatement ps = conexion.prepareStatement(sql)
         ) {
-
-            ps.setString(1, producto.getNombre());
-            ps.setBigDecimal(2, producto.getPrecio());
-            ps.setInt(3, producto.getStock());
-
-            return ps.executeUpdate() > 0;
+            cargarParametros(ps, producto);
+            return ps.executeUpdate() == 1;
         }
     }
 
-    // Consultar todos los productos
-    public List<Producto> listar()
-            throws SQLException {
+    public List<Producto> listar() throws SQLException {
 
         List<Producto> productos = new ArrayList<>();
 
-        String sql = "SELECT id, nombre, precio, stock "
-                   + "FROM productos ORDER BY id ASC";
+        String sql =
+            "SELECT id, nombre, descripcion, precio, stock, imagen_url "
+            + "FROM productos ORDER BY id DESC";
 
         try (
-            Connection conexion =
-                Conexion.obtenerConexion();
-
-            PreparedStatement ps =
-                conexion.prepareStatement(sql);
-
+            Connection conexion = Conexion.obtenerConexion();
+            PreparedStatement ps = conexion.prepareStatement(sql);
             ResultSet rs = ps.executeQuery()
         ) {
-
             while (rs.next()) {
-
-                Producto producto = new Producto(
-                    rs.getInt("id"),
-                    rs.getString("nombre"),
-                    rs.getBigDecimal("precio"),
-                    rs.getInt("stock")
-                );
-
-                productos.add(producto);
+                productos.add(mapear(rs));
             }
         }
 
         return productos;
     }
 
-    // Eliminar un producto por ID
-    public boolean eliminar(int id)
+    public Producto buscarPorId(int id) throws SQLException {
+
+        String sql =
+            "SELECT id, nombre, descripcion, precio, stock, imagen_url "
+            + "FROM productos WHERE id = ?";
+
+        try (
+            Connection conexion = Conexion.obtenerConexion();
+            PreparedStatement ps = conexion.prepareStatement(sql)
+        ) {
+            ps.setInt(1, id);
+
+            try (ResultSet rs = ps.executeQuery()) {
+                return rs.next() ? mapear(rs) : null;
+            }
+        }
+    }
+
+    public boolean actualizar(int id, Producto producto)
             throws SQLException {
 
         String sql =
-            "DELETE FROM productos WHERE id = ?";
+            "UPDATE productos "
+            + "SET nombre = ?, descripcion = ?, precio = ?, "
+            + "stock = ?, imagen_url = ? "
+            + "WHERE id = ?";
 
         try (
-            Connection conexion =
-                Conexion.obtenerConexion();
-
-            PreparedStatement ps =
-                conexion.prepareStatement(sql)
+            Connection conexion = Conexion.obtenerConexion();
+            PreparedStatement ps = conexion.prepareStatement(sql)
         ) {
+            cargarParametros(ps, producto);
+            ps.setInt(6, id);
 
-            ps.setInt(1, id);
-
-            return ps.executeUpdate() > 0;
+            return ps.executeUpdate() == 1;
         }
+    }
+
+    public boolean eliminar(int id) throws SQLException {
+
+        String sql = "DELETE FROM productos WHERE id = ?";
+
+        try (
+            Connection conexion = Conexion.obtenerConexion();
+            PreparedStatement ps = conexion.prepareStatement(sql)
+        ) {
+            ps.setInt(1, id);
+            return ps.executeUpdate() == 1;
+        }
+    }
+
+    private void cargarParametros(
+            PreparedStatement ps, Producto producto)
+            throws SQLException {
+
+        ps.setString(1, producto.getNombre());
+        ps.setString(2, producto.getDescripcion());
+        ps.setBigDecimal(3, producto.getPrecio());
+        ps.setInt(4, producto.getStock());
+        ps.setString(5, producto.getImagenUrl());
+    }
+
+    private Producto mapear(ResultSet rs) throws SQLException {
+
+        return new Producto(
+            rs.getInt("id"),
+            rs.getString("nombre"),
+            rs.getString("descripcion"),
+            rs.getBigDecimal("precio"),
+            rs.getInt("stock"),
+            rs.getString("imagen_url")
+        );
     }
 }
