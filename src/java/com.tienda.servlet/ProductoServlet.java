@@ -13,6 +13,7 @@ import jakarta.servlet.annotation.WebServlet;
 import jakarta.servlet.http.HttpServlet;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import jakarta.servlet.http.HttpSession;
 
 /**
  * Controlador del CRUD de productos.
@@ -34,12 +35,25 @@ public class ProductoServlet extends HttpServlet {
 
         String accion = request.getParameter("accion");
 
+        if ("detalle".equals(accion)) {
+            mostrarDetalle(request, response);
+            return;
+        }
+
         if ("nuevo".equals(accion)) {
+            if (!autenticado(request)) {
+                response.sendRedirect(request.getContextPath() + "/login");
+                return;
+            }
             mostrarFormularioNuevo(request, response);
             return;
         }
 
         if ("editar".equals(accion)) {
+            if (!autenticado(request)) {
+                response.sendRedirect(request.getContextPath() + "/login");
+                return;
+            }
             mostrarFormularioEditar(request, response);
             return;
         }
@@ -54,6 +68,19 @@ public class ProductoServlet extends HttpServlet {
             throws ServletException, IOException {
 
         request.setCharacterEncoding("UTF-8");
+
+        HttpSession sesion = request.getSession(false);
+        if (!autenticado(request)) {
+            response.sendError(HttpServletResponse.SC_FORBIDDEN,
+                               "Debes iniciar sesión.");
+            return;
+        }
+        String token = (String) sesion.getAttribute("csrfToken");
+        if (token == null || !token.equals(request.getParameter("csrfToken"))) {
+            response.sendError(HttpServletResponse.SC_FORBIDDEN,
+                               "Formulario no autorizado.");
+            return;
+        }
 
         String accion = request.getParameter("accion");
 
@@ -76,6 +103,38 @@ public class ProductoServlet extends HttpServlet {
             HttpServletResponse.SC_BAD_REQUEST,
             "Acción no válida."
         );
+    }
+
+    private boolean autenticado(HttpServletRequest request) {
+        HttpSession sesion = request.getSession(false);
+        return sesion != null && sesion.getAttribute("usuario") != null;
+    }
+
+    private void mostrarDetalle(
+            HttpServletRequest request,
+            HttpServletResponse response)
+            throws ServletException, IOException {
+        Integer id = obtenerId(request);
+        if (id == null) {
+            response.sendError(HttpServletResponse.SC_BAD_REQUEST,
+                               "Identificador inválido.");
+            return;
+        }
+        try {
+            Producto producto = productoDAO.buscarPorId(id);
+            if (producto == null) {
+                response.sendError(HttpServletResponse.SC_NOT_FOUND,
+                                   "Producto no encontrado.");
+                return;
+            }
+            request.setAttribute("producto", producto);
+            request.getRequestDispatcher("/WEB-INF/vistas/detalle.jsp")
+                   .forward(request, response);
+        } catch (SQLException e) {
+            log("Error cargando detalle", e);
+            mostrarError(request, response,
+                         "No se pudo consultar este producto.");
+        }
     }
 
     private void listar(

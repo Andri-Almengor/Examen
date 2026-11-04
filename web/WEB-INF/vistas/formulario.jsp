@@ -23,6 +23,8 @@
         (String) request.getAttribute("precioFormulario");
     String stock =
         (String) request.getAttribute("stockFormulario");
+    String token = (String) session.getAttribute("csrfToken");
+
     String imagen =
         (String) request.getAttribute("imagenFormulario");
 
@@ -123,6 +125,7 @@
                     <form action="<%= request.getContextPath() %>/productos"
                           method="POST">
 
+                        <input type="hidden" name="csrfToken" value="<%= Html.escapar(token) %>">
                         <input type="hidden"
                                name="accion"
                                value="<%= editar
