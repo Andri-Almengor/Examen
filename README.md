@@ -38,3 +38,12 @@ Si su MySQL usa otro puerto puede cambiar la URL en `Conexion.java` o definir la
 5. Ejecute el proyecto.
 
 El conector JDBC se incluye en la carpeta `lib`.
+
+## Catálogo público y administrador
+
+La aplicación abre el catálogo directamente sin pedir inicio de sesión. Cada Card tiene **Ver detalles** para abrir una ficha. Desde **Iniciar sesión** se accede a las operaciones Crear, Actualizar y Eliminar. Los Servlets validan la sesión en el servidor y usan token CSRF en los formularios.
+
+- Instalación desde cero: ejecutar `database/tienda.sql` en MySQL (borra la base tienda y la crea de nuevo).
+- Si ya tiene datos: ejecutar SOLO `database/actualizar_login.sql`, que conserva los productos.
+- Acceso de prueba: usuario `admin` y contraseña temporal `AdminExamen2026!`.
+- Cambie la contraseña de prueba por un nuevo hash PBKDF2 antes de publicar la aplicación en Internet.
